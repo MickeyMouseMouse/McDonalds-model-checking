@@ -1,8 +1,8 @@
 MODULE main
 DEFINE
-	new_client_delay := 11;
-	clients_number := 5;
-	cashiers_number := 2;
+	new_client_delay := 12;
+	clients_number := 1;
+	cashiers_number := 1;
 	cooks_number := 1;
 	
 	MAX_QUEUE_LENGTH := 5;
@@ -12,7 +12,6 @@ VAR
 	in_service: 0..100;
 	free_cooks: 0..100;
 	sync: 0..3;
-	next_cashier: 0..2;
 	cashiers_states: array 0..2 of {IDLE, ORDERING,
 		THREE_POS,
 			THREE_POS__THREE_COOKS__COOKING, THREE_POS__THREE_COOKS__READY,
@@ -24,16 +23,15 @@ VAR
 		ONE_POS,
 			ONE_POS__ONE_COOK__COOKING, ONE_POS__ONE_COOK__READY,
 		COMPLETED};
-	cashier0: process Cashier(0, next_cashier, cashiers_states, in_queue, in_service, free_cooks, sync);
-	cashier1: process Cashier(1, next_cashier, cashiers_states, in_queue, in_service, free_cooks, sync);
-	--cashier2: process Cashier(2, next_cashier, cashiers_states, in_queue, in_service, free_cooks, sync);
+	cashier0: process Cashier(0, sync, cashiers_states, in_queue, in_service, free_cooks);
+	--cashier1: process Cashier(1, sync, cashiers_states, in_queue, in_service, free_cooks);
+	--cashier2: process Cashier(2, sync, cashiers_states, in_queue, in_service, free_cooks);
 ASSIGN
 	init(delay) := new_client_delay;
 	init(in_queue) := clients_number;
 	init(in_service) := 0;
 	init(free_cooks) := cooks_number;
 	init(sync) := 0;
-	init(next_cashier) := 0;
 	next(delay) := case
 		sync = cashiers_number & delay > 0	: delay - 1;
 		delay = 0							: new_client_delay;
@@ -47,95 +45,87 @@ ASSIGN
 		sync = cashiers_number	: 0;
 		TRUE					: sync;
 	esac;
-	next(next_cashier) := case
-		cashiers_states[0] = IDLE	: 0;
-		cashiers_states[1] = IDLE	: 1;
-		--cashiers_states[2] = IDLE	: 2;
-		TRUE						: next_cashier;
-	esac;
 
 CTLSPEC
 AG ( ((in_queue + in_service) / cashiers_number < MAX_QUEUE_LENGTH) |
 	 ((in_queue + in_service) / cashiers_number = MAX_QUEUE_LENGTH & (in_queue + in_service) mod cashiers_number = 0) )
 
 
-MODULE Cashier(i, next_cashier, cashiers_states, in_queue, in_service, free_cooks, sync)
+MODULE Cashier(i, sync, cashiers_states, in_queue, in_service, free_cooks)
 DEFINE
 	state := cashiers_states[i];
 ASSIGN
 	init(cashiers_states[i]) := IDLE;
 	next(cashiers_states[i]) := case
-		state = IDLE & in_queue > 0	& i = next_cashier	: ORDERING;
-		state = ORDERING								: {ONE_POS, TWO_POS, THREE_POS};
+		sync = i & state = IDLE & in_queue > 0				: ORDERING;
+		sync = i & state = ORDERING							: {ONE_POS, TWO_POS, THREE_POS};
 		
 		-- The order consists of three positions
-		state = THREE_POS & free_cooks >= 3				: THREE_POS__THREE_COOKS__COOKING;
-		state = THREE_POS__THREE_COOKS__COOKING			: THREE_POS__THREE_COOKS__READY;
-		state = THREE_POS__THREE_COOKS__READY			: COMPLETED;
+		sync = i & state = THREE_POS & free_cooks >= 3		: THREE_POS__THREE_COOKS__COOKING;
+		sync = i & state = THREE_POS__THREE_COOKS__COOKING	: THREE_POS__THREE_COOKS__READY;
+		sync = i & state = THREE_POS__THREE_COOKS__READY	: COMPLETED;
 
-		state = THREE_POS & free_cooks = 2				: THREE_POS__TWO_COOKS__COOKING;
-		state = THREE_POS__TWO_COOKS__COOKING			: THREE_POS__TWO_COOKS__READY;
-		state = THREE_POS__TWO_COOKS__READY				: ONE_POS;
+		sync = i & state = THREE_POS & free_cooks = 2		: THREE_POS__TWO_COOKS__COOKING;
+		sync = i & state = THREE_POS__TWO_COOKS__COOKING	: THREE_POS__TWO_COOKS__READY;
+		sync = i & state = THREE_POS__TWO_COOKS__READY		: ONE_POS;
 		
-		state = THREE_POS & free_cooks = 1				: THREE_POS__ONE_COOK__COOKING;
-		state = THREE_POS__ONE_COOK__COOKING			: THREE_POS__ONE_COOK__READY;
-		state = THREE_POS__ONE_COOK__READY				: TWO_POS;
+		sync = i & state = THREE_POS & free_cooks = 1		: THREE_POS__ONE_COOK__COOKING;
+		sync = i & state = THREE_POS__ONE_COOK__COOKING		: THREE_POS__ONE_COOK__READY;
+		sync = i & state = THREE_POS__ONE_COOK__READY		: TWO_POS;
 		
 		
 		-- The order consists of two positions
-		state = TWO_POS & free_cooks >= 2				: TWO_POS__TWO_COOKS__COOKING;
-		state = TWO_POS__TWO_COOKS__COOKING				: TWO_POS__TWO_COOKS__READY;
-		state = TWO_POS__TWO_COOKS__READY				: COMPLETED;
+		sync = i & state = TWO_POS & free_cooks >= 2		: TWO_POS__TWO_COOKS__COOKING;
+		sync = i & state = TWO_POS__TWO_COOKS__COOKING		: TWO_POS__TWO_COOKS__READY;
+		sync = i & state = TWO_POS__TWO_COOKS__READY		: COMPLETED;
 
-		state = TWO_POS & free_cooks = 1				: TWO_POS__ONE_COOK__COOKING;
-		state = TWO_POS__ONE_COOK__COOKING				: TWO_POS__ONE_COOK__READY;
-		state = TWO_POS__ONE_COOK__READY				: ONE_POS;
+		sync = i & state = TWO_POS & free_cooks = 1			: TWO_POS__ONE_COOK__COOKING;
+		sync = i & state = TWO_POS__ONE_COOK__COOKING		: TWO_POS__ONE_COOK__READY;
+		sync = i & state = TWO_POS__ONE_COOK__READY			: ONE_POS;
 		
 
 		-- The order consists of one position
-		state = ONE_POS & free_cooks >= 1				: ONE_POS__ONE_COOK__COOKING;
-		state = ONE_POS__ONE_COOK__COOKING				: ONE_POS__ONE_COOK__READY;
-		state = ONE_POS__ONE_COOK__READY				: COMPLETED;
+		sync = i & state = ONE_POS & free_cooks >= 1		: ONE_POS__ONE_COOK__COOKING;
+		sync = i & state = ONE_POS__ONE_COOK__COOKING		: ONE_POS__ONE_COOK__READY;
+		sync = i & state = ONE_POS__ONE_COOK__READY			: COMPLETED;
 		
-		state = COMPLETED								: IDLE;
+		sync = i & state = COMPLETED						: IDLE;
 		
-		TRUE											: state;
+		TRUE												: state;
 	esac;
 	next(free_cooks) := case 
-		state = THREE_POS__THREE_COOKS__COOKING & free_cooks >= 3	: free_cooks - 3;
-		state = THREE_POS__THREE_COOKS__READY & free_cooks <= 97	: free_cooks + 3;
+		sync = i & state = THREE_POS__THREE_COOKS__COOKING & free_cooks >= 3	: free_cooks - 3;
+		sync = i & state = THREE_POS__THREE_COOKS__READY & free_cooks <= 97		: free_cooks + 3;
 		
-		state = THREE_POS__TWO_COOKS__COOKING & free_cooks >= 2		: free_cooks - 2;
-		state = THREE_POS__TWO_COOKS__READY & free_cooks <= 98		: free_cooks + 2;
+		sync = i & state = THREE_POS__TWO_COOKS__COOKING & free_cooks >= 2		: free_cooks - 2;
+		sync = i & state = THREE_POS__TWO_COOKS__READY & free_cooks <= 98		: free_cooks + 2;
 		
-		state = THREE_POS__ONE_COOK__COOKING & free_cooks >= 1		: free_cooks - 1;
-		state = THREE_POS__ONE_COOK__READY & free_cooks <= 99		: free_cooks + 1;
+		sync = i & state = THREE_POS__ONE_COOK__COOKING & free_cooks >= 1		: free_cooks - 1;
+		sync = i & state = THREE_POS__ONE_COOK__READY & free_cooks <= 99		: free_cooks + 1;
 		
-		state = TWO_POS__TWO_COOKS__COOKING & free_cooks >= 2		: free_cooks - 2;
-		state = TWO_POS__TWO_COOKS__READY & free_cooks <= 98		: free_cooks + 2;
+		sync = i & state = TWO_POS__TWO_COOKS__COOKING & free_cooks >= 2		: free_cooks - 2;
+		sync = i & state = TWO_POS__TWO_COOKS__READY & free_cooks <= 98			: free_cooks + 2;
 		
-		state = TWO_POS__ONE_COOK__COOKING & free_cooks >= 1		: free_cooks - 1;
-		state = TWO_POS__ONE_COOK__READY & free_cooks <= 99			: free_cooks + 1;
+		sync = i & state = TWO_POS__ONE_COOK__COOKING & free_cooks >= 1			: free_cooks - 1;
+		sync = i & state = TWO_POS__ONE_COOK__READY & free_cooks <= 99			: free_cooks + 1;
 		
-		state = ONE_POS__ONE_COOK__COOKING & free_cooks >= 1		: free_cooks - 1;
-		state = ONE_POS__ONE_COOK__READY & free_cooks <= 99			: free_cooks + 1;
+		sync = i & state = ONE_POS__ONE_COOK__COOKING & free_cooks >= 1			: free_cooks - 1;
+		sync = i & state = ONE_POS__ONE_COOK__READY & free_cooks <= 99			: free_cooks + 1;
 		
-		TRUE														: free_cooks;
+		TRUE																	: free_cooks;
 	esac;
 	next(in_service) := case
-		state = ORDERING & in_service < 99	: in_service + 1;
-		state = COMPLETED & in_service > 0	: in_service - 1;
-		TRUE								: in_service;
+		sync = i & state = ORDERING & in_service < 99	: in_service + 1;
+		sync = i & state = COMPLETED & in_service > 0	: in_service - 1;
+		TRUE											: in_service;
 	esac;
 	next(in_queue) := case
-		state = ORDERING & in_queue > 0	: in_queue - 1;
-		TRUE							: in_queue;
+		sync = i & state = ORDERING & in_queue > 0	: in_queue - 1;
+		TRUE										: in_queue;
 	esac;
 	next(sync) := case
-		i = 0 & sync = 0	: 1;
-		i = 1 & sync = 1	: 2;
-		i = 2 & sync = 2	: 3;
-		TRUE				: sync;
+		sync = i	: sync + 1;
+		TRUE		: sync;
 	esac;
 FAIRNESS
 	running
